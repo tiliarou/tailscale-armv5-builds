@@ -2,17 +2,40 @@
 # Installe / met à jour les binaires Tailscale armv5 sur un routeur OpenWrt
 # (kirkwood : Linksys EA4500 v1, EA3500, etc.).
 #
+# Par défaut : variante tiny (binaire combiné démon + CLI, fonctionnalités
+# minimales — pas d'annonce de routes ni d'exit node). Passez `full` en
+# argument pour installer les binaires complets.
+#
 # Prérequis :
 #   - paquets OpenWrt `tailscale` et `tailscaled` installés (scripts d'init)
 #   - wget, sha256sum (busybox)
 #
-# Usage : sh install-openwrt.sh [version]   (ex. sh install-openwrt.sh v1.102.2)
+# Usage :
+#   sh install-openwrt.sh              # dernière release, variante tiny
+#   sh install-openwrt.sh full         # dernière release, binaires complets
+#   sh install-openwrt.sh v1.104.1     # version précise, tiny
+#   sh install-openwrt.sh v1.104.1 full
 
 set -e
 
 REPO="tiliarou/tailscale-armv5-builds"
 TMP="/tmp/ts-armv5"
 STAMP=$(date +%Y%m%d-%H%M%S)
+MODE="tiny"
+
+for a in "$@"; do
+  case "$a" in
+    full|FULL) MODE="full" ;;
+  esac
+done
+
+VERSION=""
+for a in "$@"; do
+  case "$a" in
+    full|FULL) ;;
+    *) VERSION="$a" ;;
+  esac
+done
 
 command -v wget >/dev/null 2>&1 || { echo "ERREUR : wget manquant"; exit 1; }
 
@@ -26,9 +49,10 @@ TSD_BIN=$(command -v tailscaled || true)
 [ -z "$TS_BIN" ] && TS_BIN="/usr/bin/tailscale"
 [ -z "$TSD_BIN" ] && TSD_BIN="/usr/sbin/tailscaled"
 echo "Binaires existants : tailscale=$TS_BIN tailscaled=$TSD_BIN"
+echo "Mode : $MODE"
 
-if [ -n "$1" ]; then
-  BASE="https://github.com/$REPO/releases/download/$1"
+if [ -n "$VERSION" ]; then
+  BASE="https://github.com/$REPO/releases/download/$VERSION"
 else
   BASE="https://github.com/$REPO/releases/latest/download"
 fi
@@ -37,22 +61,28 @@ echo "Téléchargement depuis : $BASE"
 rm -rf "$TMP"; mkdir -p "$TMP"
 cd "$TMP"
 
-for f in tailscale tailscaled SHA256SUMS; do
+for f in tailscale tailscaled tailscaled-tiny SHA256SUMS; do
   echo "  -> $f"
   wget -q --show-progress -O "$f" "$BASE/$f" || { echo "ERREUR : téléchargement de $f"; exit 1; }
 done
 
 echo "Vérification des sommes de contrôle..."
 sha256sum -c SHA256SUMS || { echo "ERREUR : checksum invalide, abandon."; exit 1; }
-chmod +x tailscale tailscaled
+chmod +x tailscale tailscaled tailscaled-tiny
 
 echo "Sauvegarde des binaires actuels (.bak.$STAMP)..."
 cp "$TSD_BIN" "$TSD_BIN.bak.$STAMP"
 cp "$TS_BIN" "$TS_BIN.bak.$STAMP"
 
-echo "Installation..."
-mv tailscaled "$TSD_BIN"
-mv tailscale "$TS_BIN"
+echo "Installation (mode $MODE)..."
+if [ "$MODE" = "full" ]; then
+  mv tailscaled "$TSD_BIN"
+  mv tailscale "$TS_BIN"
+else
+  # Binaire combiné : invoqué sous le nom "tailscale" il agit comme le CLI.
+  mv tailscaled-tiny "$TSD_BIN"
+  ln -sf "$TSD_BIN" "$TS_BIN"
+fi
 
 if [ -x /etc/init.d/tailscale ]; then
   echo "Redémarrage du service..."

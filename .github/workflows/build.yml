@@ -49,26 +49,32 @@ jobs:
           go-version-file: tailscale/go.mod
           cache: false
 
-      - name: Compiler tailscaled et tailscale (GOARM=5, soft-float)
+      - name: Compiler (GOARM=5, soft-float) — binaires complets + variante tiny
         run: |
           cd tailscale
           export CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5
           go build -trimpath -ldflags='-s -w' -o ../dist/tailscaled ./cmd/tailscaled
           go build -trimpath -ldflags='-s -w' -o ../dist/tailscale  ./cmd/tailscale
+          TINY_TAGS=$(GOOS= GOARCH= go run ./cmd/featuretags --min --add=cli,osrouter,natraversal)
+          echo "Tags tiny : $TINY_TAGS"
+          go build -trimpath -tags "$TINY_TAGS" -ldflags='-s -w' -o ../dist/tailscaled-tiny ./cmd/tailscaled
+          ls -l ../dist
 
       - name: Vérifier l'ABI (soft-float obligatoire pour ARMv5)
         run: |
-          file dist/tailscaled dist/tailscale
-          readelf -h dist/tailscaled | grep -E 'Class:|Machine:|Flags:'
-          if readelf -A dist/tailscaled | grep -q 'Tag_ABI_VFP_args'; then
-            echo 'ERREUR : binaire hard-float, incompatible ARMv5' >&2
-            exit 1
-          fi
+          file dist/tailscaled dist/tailscale dist/tailscaled-tiny
+          readelf -h dist/tailscaled-tiny | grep -E 'Class:|Machine:|Flags:'
+          for b in tailscaled tailscaled-tiny; do
+            if readelf -A "dist/$b" | grep -q 'Tag_ABI_VFP_args'; then
+              echo "ERREUR : $b est hard-float, incompatible ARMv5" >&2
+              exit 1
+            fi
+          done
 
       - name: Générer les sommes de contrôle
         run: |
           cd dist
-          sha256sum tailscale tailscaled > SHA256SUMS
+          sha256sum tailscale tailscaled tailscaled-tiny > SHA256SUMS
           cat SHA256SUMS
 
       - name: Créer ou mettre à jour la release
@@ -79,9 +85,9 @@ jobs:
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG déjà existante : mise à jour des fichiers."
-            gh release upload "$TAG" dist/tailscale dist/tailscaled dist/SHA256SUMS --clobber
+            gh release upload "$TAG" dist/tailscale dist/tailscaled dist/tailscaled-tiny dist/SHA256SUMS --clobber
           else
-            gh release create "$TAG" dist/tailscale dist/tailscaled dist/SHA256SUMS \
+            gh release create "$TAG" dist/tailscale dist/tailscaled dist/tailscaled-tiny dist/SHA256SUMS \
               --title "Tailscale $TAG (armv5 soft-float)" \
-              --notes "Build des sources officielles tailscale/tailscale $TAG — GOARM=5, GOARCH=arm, CGO_ENABLED=0. Compatible ARMv5 soft-float (kirkwood, Feroceon 88FR131 : Linksys EA4500 v1, EA3500, etc.). Vérification : sha256sum -c SHA256SUMS"
+              --notes "Build des sources officielles tailscale/tailscale $TAG — GOARM=5, GOARCH=arm, CGO_ENABLED=0. Compatible ARMv5 soft-float (kirkwood : Linksys EA4500 v1, EA3500). Deux variantes : binaires complets (tailscale + tailscaled) et tailscaled-tiny (binaire combiné, fonctionnalités minimales : pas de subnet router ni exit node). Vérification : sha256sum -c SHA256SUMS"
           fi
