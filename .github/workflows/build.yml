@@ -1,0 +1,86 @@
+name: Build Tailscale (armv5)
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version Tailscale à compiler (ex. v1.104.1). Vide = dernière stable.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déterminer la version à compiler
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="$INPUT_VERSION"
+          else
+            TAG=$(git ls-remote --tags --sort=-v:refname https://github.com/tailscale/tailscale 'v1.*' | grep -v '\^{}' | head -n1 | sed 's|.*refs/tags/||')
+          fi
+          case "$TAG" in
+            v1.*) ;;
+            *) echo "Tag invalide : '$TAG'" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Version à compiler : $TAG"
+
+      - name: Récupérer les sources Tailscale
+        uses: actions/checkout@v4
+        with:
+          repository: tailscale/tailscale
+          ref: ${{ steps.version.outputs.tag }}
+          path: tailscale
+
+      - name: Installer Go (version requise par go.mod)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tailscale/go.mod
+          cache: false
+
+      - name: Compiler tailscaled et tailscale (GOARM=5, soft-float)
+        run: |
+          cd tailscale
+          export CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5
+          go build -trimpath -ldflags='-s -w' -o ../dist/tailscaled ./cmd/tailscaled
+          go build -trimpath -ldflags='-s -w' -o ../dist/tailscale  ./cmd/tailscale
+
+      - name: Vérifier l'ABI (soft-float obligatoire pour ARMv5)
+        run: |
+          file dist/tailscaled dist/tailscale
+          readelf -h dist/tailscaled | grep -E 'Class:|Machine:|Flags:'
+          if readelf -A dist/tailscaled | grep -q 'Tag_ABI_VFP_args'; then
+            echo 'ERREUR : binaire hard-float, incompatible ARMv5' >&2
+            exit 1
+          fi
+
+      - name: Générer les sommes de contrôle
+        run: |
+          cd dist
+          sha256sum tailscale tailscaled > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Créer ou mettre à jour la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG déjà existante : mise à jour des fichiers."
+            gh release upload "$TAG" dist/tailscale dist/tailscaled dist/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" dist/tailscale dist/tailscaled dist/SHA256SUMS \
+              --title "Tailscale $TAG (armv5 soft-float)" \
+              --notes "Build des sources officielles tailscale/tailscale $TAG — GOARM=5, GOARCH=arm, CGO_ENABLED=0. Compatible ARMv5 soft-float (kirkwood, Feroceon 88FR131 : Linksys EA4500 v1, EA3500, etc.). Vérification : sha256sum -c SHA256SUMS"
+          fi
