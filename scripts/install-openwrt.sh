@@ -2,18 +2,18 @@
 # Installe / met à jour les binaires Tailscale armv5 sur un routeur OpenWrt
 # (kirkwood : Linksys EA4500 v1, EA3500, etc.).
 #
-# Par défaut : variante tiny (binaire combiné démon + CLI, fonctionnalités
-# minimales — pas d'annonce de routes ni d'exit node). Passez `full` en
-# argument pour installer les binaires complets.
+# Par défaut : variante combinée (un seul binaire = démon + CLI, avec
+# exit node et subnet router). Passez `full` en argument pour les
+# binaires complets (toutes fonctionnalités, SSH inclus).
 #
 # Prérequis :
 #   - paquets OpenWrt `tailscale` et `tailscaled` installés (scripts d'init)
 #   - wget, sha256sum (busybox)
 #
 # Usage :
-#   sh install-openwrt.sh              # dernière release, variante tiny
+#   sh install-openwrt.sh              # dernière release, variante combinée
 #   sh install-openwrt.sh full         # dernière release, binaires complets
-#   sh install-openwrt.sh v1.104.1     # version précise, tiny
+#   sh install-openwrt.sh v1.104.1     # version précise
 #   sh install-openwrt.sh v1.104.1 full
 
 set -e

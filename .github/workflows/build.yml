@@ -49,14 +49,14 @@ jobs:
           go-version-file: tailscale/go.mod
           cache: false
 
-      - name: Compiler (GOARM=5, soft-float) — binaires complets + variante tiny
+      - name: Compiler (GOARM=5, soft-float) — binaires complets + variante combinée
         run: |
           cd tailscale
           export CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5
           go build -trimpath -ldflags='-s -w' -o ../dist/tailscaled ./cmd/tailscaled
           go build -trimpath -ldflags='-s -w' -o ../dist/tailscale  ./cmd/tailscale
-          TINY_TAGS=$(GOOS= GOARCH= go run ./cmd/featuretags --min --add=cli,osrouter,natraversal)
-          echo "Tags tiny : $TINY_TAGS"
+          TINY_TAGS=$(GOOS= GOARCH= go run ./cmd/featuretags --min --add=cli,osrouter,natraversal,advertiseexitnode)
+          echo "Tags combiné : $TINY_TAGS"
           go build -trimpath -tags "$TINY_TAGS" -ldflags='-s -w' -o ../dist/tailscaled-tiny ./cmd/tailscaled
           ls -l ../dist
 
@@ -89,5 +89,5 @@ jobs:
           else
             gh release create "$TAG" dist/tailscale dist/tailscaled dist/tailscaled-tiny dist/SHA256SUMS \
               --title "Tailscale $TAG (armv5 soft-float)" \
-              --notes "Build des sources officielles tailscale/tailscale $TAG — GOARM=5, GOARCH=arm, CGO_ENABLED=0. Compatible ARMv5 soft-float (kirkwood : Linksys EA4500 v1, EA3500). Deux variantes : binaires complets (tailscale + tailscaled) et tailscaled-tiny (binaire combiné, fonctionnalités minimales : pas de subnet router ni exit node). Vérification : sha256sum -c SHA256SUMS"
+              --notes "Build des sources officielles tailscale/tailscale $TAG — GOARM=5, GOARCH=arm, CGO_ENABLED=0. Compatible ARMv5 soft-float (kirkwood : Linksys EA4500 v1, EA3500). Deux variantes : binaires complets (tailscale + tailscaled) et tailscaled-tiny (binaire combiné démon + CLI, avec exit node et subnet router, sans SSH ni debug). Vérification : sha256sum -c SHA256SUMS"
           fi
