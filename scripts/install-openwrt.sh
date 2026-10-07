@@ -3,7 +3,7 @@
 # (kirkwood : Linksys EA4500 v1, EA3500, etc.).
 #
 # Prérequis :
-#   - paquets OpenWrt \`tailscale\` et \`tailscaled\` installés (scripts d'init)
+#   - paquets OpenWrt `tailscale` et `tailscaled` installés (scripts d'init)
 #   - wget, sha256sum (busybox)
 #
 # Usage : sh install-openwrt.sh [version]   (ex. sh install-openwrt.sh v1.102.2)
