@@ -63,7 +63,7 @@ cd "$TMP"
 
 for f in tailscale tailscaled tailscaled-tiny SHA256SUMS; do
   echo "  -> $f"
-  wget -q --show-progress -O "$f" "$BASE/$f" || { echo "ERREUR : téléchargement de $f"; exit 1; }
+  wget -q -O "$f" "$BASE/$f" || { echo "ERREUR : téléchargement de $f"; exit 1; }
 done
 
 echo "Vérification des sommes de contrôle..."
