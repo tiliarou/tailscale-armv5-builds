@@ -6,6 +6,9 @@
 # exit node et subnet router). Passez `full` en argument pour les
 # binaires complets (toutes fonctionnalités, SSH inclus).
 #
+# Optimisé RAM : /tmp est en tmpfs sur OpenWrt — on ne télécharge que la
+# variante choisie et on installe chaque binaire dès sa vérification.
+#
 # Prérequis :
 #   - paquets OpenWrt `tailscale` et `tailscaled` installés (scripts d'init)
 #   - wget, sha256sum (busybox)
@@ -57,18 +60,23 @@ else
   BASE="https://github.com/$REPO/releases/latest/download"
 fi
 
-echo "Téléchargement depuis : $BASE"
 rm -rf "$TMP"; mkdir -p "$TMP"
 cd "$TMP"
 
-for f in tailscale tailscaled tailscaled-tiny SHA256SUMS; do
+echo "Téléchargement des sommes de contrôle..."
+wget -q -O SHA256SUMS "$BASE/SHA256SUMS" || { echo "ERREUR : téléchargement de SHA256SUMS"; exit 1; }
+
+install_one() {
+  # $1 = fichier de la release, $2 = destination finale
+  f="$1"; dest="$2"
   echo "  -> $f"
   wget -q -O "$f" "$BASE/$f" || { echo "ERREUR : téléchargement de $f"; exit 1; }
-done
-
-echo "Vérification des sommes de contrôle..."
-sha256sum -c SHA256SUMS || { echo "ERREUR : checksum invalide, abandon."; exit 1; }
-chmod +x tailscale tailscaled tailscaled-tiny
+  grep " $f\$" SHA256SUMS > "$f.sum" || { echo "ERREUR : checksum manquant pour $f"; exit 1; }
+  sha256sum -c "$f.sum" >/dev/null || { echo "ERREUR : checksum invalide pour $f, abandon."; exit 1; }
+  echo "     checksum OK, installation..."
+  chmod +x "$f"
+  mv "$f" "$dest"   # libère la RAM de /tmp immédiatement
+}
 
 echo "Sauvegarde des binaires actuels (.bak.$STAMP)..."
 cp "$TSD_BIN" "$TSD_BIN.bak.$STAMP"
@@ -76,13 +84,15 @@ cp "$TS_BIN" "$TS_BIN.bak.$STAMP"
 
 echo "Installation (mode $MODE)..."
 if [ "$MODE" = "full" ]; then
-  mv tailscaled "$TSD_BIN"
-  mv tailscale "$TS_BIN"
+  install_one tailscaled "$TSD_BIN"
+  install_one tailscale "$TS_BIN"
 else
   # Binaire combiné : invoqué sous le nom "tailscale" il agit comme le CLI.
-  mv tailscaled-tiny "$TSD_BIN"
+  install_one tailscaled-tiny "$TSD_BIN"
   ln -sf "$TSD_BIN" "$TS_BIN"
 fi
+
+rm -rf "$TMP"
 
 if [ -x /etc/init.d/tailscale ]; then
   echo "Redémarrage du service..."
